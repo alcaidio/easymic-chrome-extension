@@ -1,38 +1,80 @@
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.action.setBadgeText({
-    text: "OFF",
+const extensions = "https://meet.google.com";
+
+const micOnToText = (micOn) => {
+  if (micOn) {
+    return "ON";
+  }
+
+  return "OFF";
+};
+
+const inAllTabs = (fn) => {
+  chrome.tabs.query({}, function (tabs) {
+    tabs.forEach(function (tab) {
+      fn(tab);
+    });
   });
+};
+
+const muteMic = (tab) => {
+  if (tab.url.startsWith(extensions)) {
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      files: ["scripts/mute.js"],
+    });
+  }
+};
+
+const unmuteMic = (tab) => {
+  if (tab.url.startsWith(extensions)) {
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      files: ["scripts/unmute.js"],
+    });
+  }
+};
+
+const listenClicks = (tab) => {
+  if (tab.url.startsWith(extensions)) {
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      files: ["scripts/listen-click.js"],
+    });
+  }
+};
+
+const synchronizeState = (micOn) => {
+  chrome.storage.session.set({ micOn });
+
+  chrome.action.setBadgeText({
+    text: micOnToText(micOn),
+  });
+
+  chrome.action.setBadgeTextColor({
+    color: "white",
+  });
+
+  chrome.action.setBadgeBackgroundColor({
+    color: micOn ? "#3C4043" : "#EA4335",
+  });
+
+  if (micOn) {
+    inAllTabs(unmuteMic);
+  } else {
+    inAllTabs(muteMic);
+  }
+};
+
+chrome.runtime.onInstalled.addListener(async () => {
+  synchronizeState(true);
+  inAllTabs(listenClicks);
 });
 
-const extensions = "https://developer.chrome.com/docs/extensions";
-const webstore = "https://developer.chrome.com/docs/webstore";
+chrome.runtime.onMessage.addListener((message) => {
+  synchronizeState(message.micOn);
+});
 
-// When the user clicks on the extension action
-chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.url.startsWith(extensions) || tab.url.startsWith(webstore)) {
-    // We retrieve the action badge to check if the extension is 'ON' or 'OFF'
-    const prevState = await chrome.action.getBadgeText({ tabId: tab.id });
-    // Next state will always be the opposite
-    const nextState = prevState === "ON" ? "OFF" : "ON";
-
-    // Set the action badge to the next state
-    await chrome.action.setBadgeText({
-      tabId: tab.id,
-      text: nextState,
-    });
-
-    if (nextState === "ON") {
-      // Insert the CSS file when the user turns the extension on
-      await chrome.scripting.insertCSS({
-        files: ["focus-mode.css"],
-        target: { tabId: tab.id },
-      });
-    } else if (nextState === "OFF") {
-      // Remove the CSS file when the user turns the extension off
-      await chrome.scripting.removeCSS({
-        files: ["focus-mode.css"],
-        target: { tabId: tab.id },
-      });
-    }
-  }
+chrome.action.onClicked.addListener(async () => {
+  const state = await chrome.storage.session.get(["micOn"]);
+  synchronizeState(!state?.micOn);
 });
